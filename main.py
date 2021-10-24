@@ -43,10 +43,7 @@ class RDSBModel:
         df_fin = pd.concat(fin_list, join='outer', axis=1)
 
         # Construct cmg price dataframe
-        cmg_list = (cmg_utils.get_cmg_data('brent-crude-oil-prices-10-year-daily-chart.csv', 'brent'),
-                    cmg_utils.get_cmg_data('wti-crude-oil-prices-10-year-daily-chart.csv', 'wticrude'),
-                    cmg_utils.get_cmg_data('natural-gas-prices-historical-chart_mjsp.csv', 'naturalgas'))
-        self.df_cmg = pd.concat(cmg_list, join='outer', axis=1)
+        self.df_cmg = cmg_utils.get_cmg()
 
         # Oil supply and demand
         self.df_oil_demand = cmg_utils.get_oil_demand()
@@ -55,6 +52,7 @@ class RDSBModel:
         self.df_main = pd.concat([df_fin, self.df_cmg, self.df_oil_demand, df_sp], join='outer', axis=1)
 
         # self.df_main = self.df_main.interpolate(method='polynomial', order=2)  # TODO CHEAT
+        self.df_main = self.df_main.bfill() # TODO: CHEAT - backfill, since we take 3M rolling avgs of these values
         self.df_main = self.df_main.ffill()
 
         # Approximation: Backfill production volumes data from 2014
@@ -64,6 +62,11 @@ class RDSBModel:
         self.df_main['world production'] = self.df_main['world production'].bfill()
         self.df_main['world consumption'] = self.df_main['world consumption'].bfill()
 
+        # TODO: harvest from public data
+        self.df_main['Shares outstanding at the end of the period'] = self.df_main['Shares outstanding at the end of the period'].bfill()
+        self.df_main['Income from continuing operations'] = self.df_main['Income from continuing operations'].bfill()
+        self.df_main['Total assets'] = self.df_main['Total assets'].interpolate(method='polynomial', order=1, limit_direction='backward')
+        self.df_main['Total liabilities'] = self.df_main['Total liabilities'].interpolate(method='polynomial', order=1, limit_direction='backward')
 
     def extract_features(self):
         # Calculate possible target variables to choose from
@@ -93,8 +96,20 @@ class RDSBModel:
         # self.df_main['cmg x vol'] = self.df_main[['naturalgas x vol', 'brent x vol', 'wticrude x vol']].sum()
 
         # Using Shell's own average sale prices
-        self.df_main['Realised oil price global x vol'] = self.df_main['Realised oil price global'] * self.df_main['Total liquids production']
-        self.df_main['Realised gas price global x vol'] = self.df_main['Realised gas price global'] * self.df_main['Total natural gas production']
+        for col in ['Realised oil price global',
+                    'wticrude',
+                    'brent',
+                    'Gasoline',
+                    'Fuel Oil',
+                    'Gasoline All Grades Retail Price']:
+            self.df_main[col+' x vol'] = self.df_main[col] * self.df_main['Total liquids production']
+        for col in ['Realised gas price global',
+                    'naturalgas',
+                    'Natural Gas Price Industrial Sector',
+                    'Natural Gas Price Commercial Sector',
+                    # 'Natural Gas Price Residential Sector',
+                    ]:
+            self.df_main[col+' x vol'] = self.df_main[col] * self.df_main['Total natural gas production']
         
         # print(self.df_main[['naturalgas x vol', 'brent x vol', 'wticrude x vol']])
         # assert False
@@ -108,13 +123,14 @@ class RDSBModel:
         # Calculate rolling means
         for col in ['brent x vol', 'wticrude x vol', 'naturalgas x vol',
                     'brent x CapEmployed', 'wticrude x CapEmployed', 'naturalgas x CapEmployed',
+                    'Gasoline All Grades Retail Price x vol', 'Natural Gas Price Industrial Sector x vol',
                     'Depreciation, depletion and amortisation_neg', 'Purchases_neg', 'Revenue',
                     'Revenue-Depreciation',
                     'Total assets', 'Total liabilities_neg', 'Income from continuing operations',
                     'NAV',
                     'Debt',
                     'world production', 'world consumption', 'world consumption-production',
-                    'Close US cents']:
+                    'Close US cents', 'Market cap']:
             # self.df_main[col+'36M'] = self.df_main[col].rolling(36 * 30).mean()
             self.df_main[col+'24M'] = self.df_main[col].rolling(24 * 30).mean()
             self.df_main[col+'12M'] = self.df_main[col].rolling(12 * 30).mean()
@@ -130,6 +146,7 @@ class RDSBModel:
         
         # Data to regress
         self.df_regdata = self.df_main[self.feature_cols+[self.regress_col]]
+        self.df_regdata.to_csv('tmp.csv')
 
         # TODO CHEAT: temporarily commented
         # Avoid look-forward: shift the below columns forward
@@ -148,6 +165,11 @@ class RDSBModel:
 
         # Drop rows with NaNs
         self.df_regdata = self.df_regdata.dropna()
+
+        # Cull to daterange of interest
+        # self.df_regdata = self.df_regdata[self.df_regdata.index > '2008-01-01']
+        self.df_regdata = self.df_regdata[self.df_regdata.index > '2001-02-01']
+        # self.df_regdata = self.df_regdata[self.df_regdata.index < '2021-10-01']
 
         self.X_all_dates = self.df_regdata.index.values
         # self.X_all = df['all'][['Brent rolling12M','Natural Gas rolling12M','Shares outstanding at the end of the period']].values
@@ -258,18 +280,25 @@ class RDSBModel:
             coeff_norm_abs = abs(coeff/self.df_regdata[col].median())
             unsorted_list.append([col, coeff_norm_abs, coeff])
         unsorted_list.sort(key=lambda x: x[1])
-        print(f'{"Feature name":30s} Coefficient  Negative Coeff')
+        print(f'{"Feature name":60s} Coefficient  Negative Coeff')
         for tup in unsorted_list:
             if tup[1] != 0.0:
-                print(f'{tup[0]:30s} {tup[1]:.5e}  {tup[2] < 0.0}')
+                print(f'{tup[0]:60s} {tup[1]:.5e}  {tup[2] < 0.0}')
 
         # View the entire train+test plot
         # Make predictions using the training set
         y_all_pred = regr.predict(self.X_all)
         y_err = abs(y_all_pred - self.y_all)
         plt.figure(figsize=(15, 4))
-        plt.plot(self.X_all_dates, self.y_all, color='green', linewidth=1, label='test');
-        plt.plot(self.X_all_dates, y_all_pred, color='blue', linewidth=1, label='pred');
+        # daily resolved versions of the target variable
+        for target_col in ['Revenue per share $', 'Revenue', 'Total revenue and other income',
+                           'Market cap', 'Close US cents']:
+            if self.regress_col.startswith(target_col):
+                df_daily = self.df_main[target_col][self.X_all_dates].dropna()
+        plt.plot(self.X_all_dates, df_daily.values, color='black', linewidth=1, label='test-daily');
+        # model train and predict lines
+        plt.plot(self.X_all_dates, self.y_all, color='green', alpha=0.5, linewidth=1, label='test');
+        plt.plot(self.X_all_dates, y_all_pred, color='blue', linewidth=1.5, label='pred');
         plt.plot(self.X_all_dates, y_err, color='black', linewidth=1, label='error');
         plt.axvline(self.X_dates_train[-1])
         plt.legend();
@@ -280,10 +309,14 @@ class RDSBModel:
 if __name__ == '__main__':
 
     feature_cols = [
+        'U.S. Commercial Inventory Crude Oil and Other Liquids',
         # 'world production',
         # 'world consumption',
-        'world consumption-production',
+        # 'world production3M',
+        'world consumption3M',
+        # 'world consumption-production',
         # 'world consumption/production',
+        # 'world consumption-production3M',
         # 'world consumption-production6M',
         # 'world consumption-production12M',
         # 'world consumption-production24M',
@@ -315,13 +348,29 @@ if __name__ == '__main__':
         # 'Natural Gas rolling3M',
         # 'Natural Gas rolling6M',
         # 'Natural Gas rolling12M',
+
+        # 'wticrude',
+        # 'brent',
+        # 'Gasoline',
+        # 'Fuel Oil',
+        # 'Gasoline All Grades Retail Price',
+
+        # 'Gasoline x vol',
+        # 'Fuel Oil x vol',
+        'Gasoline All Grades Retail Price x vol',
+        # 'Gasoline All Grades Retail Price x vol3M',
+
         # 'Realised oil price global',
         # 'Realised gas price global',
         # 'Realised oil price global x vol',
         # 'Realised gas price global x vol',
-        'naturalgas x vol',
-        'brent x vol',
-        'wticrude x vol',
+        # 'Natural Gas Price Industrial Sector',
+        # 'Natural Gas Price Commercial Sector',
+        'Natural Gas Price Commercial Sector x vol',
+        # 'Natural Gas Price Industrial Sector x vol3M',
+        # 'naturalgas x vol',
+        # 'brent x vol',
+        # 'wticrude x vol',
         # 'naturalgas x vol3M',
         # 'brent x vol3M',
         # 'wticrude x vol3M',
@@ -346,7 +395,7 @@ if __name__ == '__main__':
         # 'Purchases_neg6M',
         # 'Purchases_neg12M',
         # 'Purchases_neg24M',
-        # 'Depreciation, depletion and amortisation_neg',
+        'Depreciation, depletion and amortisation_neg',
         # 'Depreciation, depletion and amortisation_neg3M',
         # 'Depreciation, depletion and amortisation_neg6M',
         # 'Depreciation, depletion and amortisation_neg12M',
@@ -366,11 +415,12 @@ if __name__ == '__main__':
         # 'Total assets24M', 'Total liabilities_neg24M',
         'Income from continuing operations',
         # 'Income from continuing operations3M',
+        # 'Income from continuing operations12M',
         ### Assets-liabilities
-        'NAV',
+        # 'NAV',
         # 'NAV3M',
         # 'NAV6M',
-        # 'NAV12M',
+        'NAV12M',
         # 'NAV24M',
     ]
 
@@ -384,9 +434,12 @@ if __name__ == '__main__':
     #                 'world consumption-production',
     #                 ]
 
+    regress_col = 'Close US cents'
     # regress_col = 'Close US cents1M'
-    # regress_col = 'Close US cents'
-    regress_col = 'Market cap'
+    # regress_col = 'Close US cents3M'
+    # regress_col = 'Market cap'
+    # regress_col = 'Market cap1M'
+    # regress_col = 'Market cap3M'
     # regress_col = 'Revenue per share $'
     # regress_col = 'Revenue'
     # regress_col = 'Total revenue and other income'
