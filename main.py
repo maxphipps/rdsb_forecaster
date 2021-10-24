@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import Ridge, Lasso, ElasticNet
+from sklearn.linear_model import Ridge, Lasso, ElasticNet, BayesianRidge
 from sklearn.metrics import mean_squared_error, r2_score
 
 import matplotlib.pyplot as plt
@@ -105,7 +105,6 @@ class RDSBModel:
             self.df_main[comcol+' x CapEmployed'] = \
                     self.df_main[comcol].multiply(self.df_main['Property, plant and equipment'],axis=0)
 
-
         # Calculate rolling means
         for col in ['brent x vol', 'wticrude x vol', 'naturalgas x vol',
                     'brent x CapEmployed', 'wticrude x CapEmployed', 'naturalgas x CapEmployed',
@@ -123,22 +122,14 @@ class RDSBModel:
             self.df_main[col+'3M'] = self.df_main[col].rolling(3 * 30).mean()
             self.df_main[col+'1M'] = self.df_main[col].rolling(1 * 30).mean()
 
-    def regress(self):
+    def train_test_split(self):
 
         # Visualise the features
         self.df_main[self.feature_cols].plot()
         plt.show()
-
-        # # Join prices of commodities on open market (frame) with
-        # # prices RDSB has reported it has sold its commodities for (frame)
-        # df_regdata = df['commodities'].join(dfOilUSDperBbl.rename(columns={'Global':'Realised oil price global'})['Realised oil price global'])
-        # df_regdata = df_regdata.join(dfGasUSDperThousandSCF.rename(columns={'Global':'Realised gas price global'})['Realised gas price global'])
-
-        # Commodities frame joined with share price frame, and Revenue
-        # df_regdata = df_regdata.join(
-        #     self.df_main[feature_cols+[regress_col]],
-        #     how='inner')
-        df_regdata = self.df_main[self.feature_cols+[self.regress_col]]
+        
+        # Data to regress
+        self.df_regdata = self.df_main[self.feature_cols+[self.regress_col]]
 
         # TODO CHEAT: temporarily commented
         # Avoid look-forward: shift the below columns forward
@@ -146,25 +137,25 @@ class RDSBModel:
         # since these value won't be available until the latest report is released
         # for col in ['Property, plant and equipment', 'Realised oil price global', 'Realised gas price global']:
         # for col in feature_cols:
-        #     if col in df_regdata.columns:
-        #         df_regdata[col] = df_regdata[col].shift(1)
+        #     if col in self.df_regdata.columns:
+        #         self.df_regdata[col] = self.df_regdata[col].shift(1)
 
         # temporary. remove:
-        # df_regdata['brent'] = df_regdata['brent'].shift(1)
-        # df_regdata['naturalgas'] = df_regdata['naturalgas'].shift(1)
-        # df_regdata['Brent rolling3M'] = df_regdata['Brent rolling3M'].shift(1)
-        # df_regdata['Natural Gas rolling3M'] = df_regdata['Natural Gas rolling3M'].shift(1)
+        # self.df_regdata['brent'] = self.df_regdata['brent'].shift(1)
+        # self.df_regdata['naturalgas'] = self.df_regdata['naturalgas'].shift(1)
+        # self.df_regdata['Brent rolling3M'] = self.df_regdata['Brent rolling3M'].shift(1)
+        # self.df_regdata['Natural Gas rolling3M'] = self.df_regdata['Natural Gas rolling3M'].shift(1)
 
         # Drop rows with NaNs
-        df_regdata = df_regdata.dropna()
+        self.df_regdata = self.df_regdata.dropna()
 
-        X_all_dates = df_regdata.index.values
-        # X_all = df['all'][['Brent rolling12M','Natural Gas rolling12M','Shares outstanding at the end of the period']].values
-        # X_all = df['all'][['brent','naturalgas','Shares outstanding at the end of the period']].values
-        X_all = df_regdata[feature_cols].values
+        self.X_all_dates = self.df_regdata.index.values
+        # self.X_all = df['all'][['Brent rolling12M','Natural Gas rolling12M','Shares outstanding at the end of the period']].values
+        # self.X_all = df['all'][['brent','naturalgas','Shares outstanding at the end of the period']].values
+        self.X_all = self.df_regdata[feature_cols].values
 
         # target variable revenue
-        y_all = df_regdata[regress_col].values
+        self.y_all = self.df_regdata[regress_col].values
 
         # n_test = 14 # 1800
         # n_test = 15#10 # 12 # 1800
@@ -173,16 +164,16 @@ class RDSBModel:
         # https://scikit-learn.org/stable/auto_examples/linear_model/plot_ols.html#sphx-glr-auto-examples-linear-model-plot-ols-py
 
         # Split the data into training/testing sets
-        self.X_train = X_all[:-n_test]
-        self.X_dates_train = X_all_dates[:-n_test]
-        self.X_test = X_all[-n_test:]
-        X_dates_test = X_all_dates[-n_test:]
+        self.X_train = self.X_all[:-n_test]
+        self.X_dates_train = self.X_all_dates[:-n_test]
+        self.X_test = self.X_all[-n_test:]
+        # X_dates_test = self.X_all_dates[-n_test:]
 
         # Split the targets into training/testing sets
-        self.Y_train = y_all[:-n_test]
-        self.Y_test = y_all[-n_test:]
+        self.Y_train = self.y_all[:-n_test]
+        self.Y_test = self.y_all[-n_test:]
 
-    # def train(self):
+    def train(self):
         """
         Optimising the alpha coefficient for ridge regression
         """
@@ -208,8 +199,8 @@ class RDSBModel:
         # Find alpha that minimises error
         alpha_err_list = list(zip(alphas, errors))
         alpha_err_list.sort(key=lambda x: x[1])
-        alpha_minerr = alpha_err_list[0][0]
-        print(f'alpha value that minimises error = {alpha_minerr}')
+        self.alpha_minerr = alpha_err_list[0][0]
+        print(f'alpha value that minimises error = {self.alpha_minerr}')
 
         # Display results
         plt.figure(figsize=(20, 6))
@@ -218,7 +209,7 @@ class RDSBModel:
         ax = plt.gca()
         ax.plot(alphas, coefs)
         ax.set_xscale('log')
-        plt.axvline(alpha_minerr, color='k', linestyle='--')
+        plt.axvline(self.alpha_minerr, color='k', linestyle='--')
         plt.xlabel('alpha')
         plt.ylabel('weights')
         plt.title('Ridge coefficients as a function of the regularization')
@@ -228,22 +219,20 @@ class RDSBModel:
         ax = plt.gca()
         ax.plot(alphas, errors)
         ax.set_xscale('log')
-        plt.axvline(alpha_minerr, color='k', linestyle='--')
+        plt.axvline(self.alpha_minerr, color='k', linestyle='--')
         plt.xlabel('alpha')
         plt.ylabel('error')
         plt.title('Coefficient error as a function of the regularization')
         plt.axis('tight')
         plt.show()
 
-
-        # Create linear regression object
-        # regr = LinearRegression(fit_intercept=False)
-        # regr = LinearRegression()
+    def predict(self):
+        regr = self.mdl
 
         # regr = Ridge(alpha=alpha_minerr, positive=True)
         # regr = ElasticNet(alpha=alpha_minerr, l1_ratio=0.05, positive=True)
         params = regr.get_params(deep=True)
-        params.update({'alpha': alpha_minerr})
+        params.update({'alpha': self.alpha_minerr})
         regr.set_params(**params)
 
         # Train the model using the training sets
@@ -265,8 +254,8 @@ class RDSBModel:
         # Print the coefficients scaled by avg value of its column
         # Effectively an importance plot
         unsorted_list = []
-        for col, coeff in zip(df_regdata.columns, regr.coef_):
-            coeff_norm_abs = abs(coeff/df_regdata[col].median())
+        for col, coeff in zip(self.df_regdata.columns, regr.coef_):
+            coeff_norm_abs = abs(coeff/self.df_regdata[col].median())
             unsorted_list.append([col, coeff_norm_abs, coeff])
         unsorted_list.sort(key=lambda x: x[1])
         print(f'{"Feature name":30s} Coefficient  Negative Coeff')
@@ -276,12 +265,12 @@ class RDSBModel:
 
         # View the entire train+test plot
         # Make predictions using the training set
-        y_all_pred = regr.predict(X_all)
-        y_err = abs(y_all_pred - y_all)
+        y_all_pred = regr.predict(self.X_all)
+        y_err = abs(y_all_pred - self.y_all)
         plt.figure(figsize=(15, 4))
-        plt.plot(X_all_dates, y_all, color='green', linewidth=1, label='test');
-        plt.plot(X_all_dates, y_all_pred, color='blue', linewidth=1, label='pred');
-        plt.plot(X_all_dates, y_err, color='black', linewidth=1, label='error');
+        plt.plot(self.X_all_dates, self.y_all, color='green', linewidth=1, label='test');
+        plt.plot(self.X_all_dates, y_all_pred, color='blue', linewidth=1, label='pred');
+        plt.plot(self.X_all_dates, y_err, color='black', linewidth=1, label='error');
         plt.axvline(self.X_dates_train[-1])
         plt.legend();
         plt.ylim([0, plt.ylim()[1]*1.1]);
@@ -402,8 +391,10 @@ if __name__ == '__main__':
     # regress_col = 'Revenue'
     # regress_col = 'Total revenue and other income'
 
+    # Create linear regression object
     mdl = Ridge(positive=False)
     # mdl = ElasticNet(l1_ratio=0.05, positive=True)
+    # mdl = BayesianRidge()
 
     param = {'regress_col': regress_col, 'feature_cols': feature_cols,
              'years_test': 5, 'mdl': mdl}
@@ -467,4 +458,6 @@ if __name__ == '__main__':
     # print(df['income_sheet_quar'][cols].corr(method='pearson'))
     # plt.show()
 
-    mdl.regress()
+    mdl.train_test_split()
+    mdl.train()
+    mdl.predict()
