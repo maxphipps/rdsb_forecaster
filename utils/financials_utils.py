@@ -26,29 +26,29 @@ def income_sheet():
     df = {}
     # Annual reported values:
     # Mask to drop where reported by quarter, leaving behind just years, e.g. 2019
-    df['income_sheet_ann'] = dftmp[~dftmp.index.to_series().str.startswith('Q')]
+    df_income_sheet_ann = dftmp[~dftmp.index.to_series().str.startswith('Q')]
     # Convert index to datetime
-    df['income_sheet_ann'].index = pd.to_datetime(df['income_sheet_ann'].index + '1231', format='%Y%m%d')
+    df_income_sheet_ann.index = pd.to_datetime(df_income_sheet_ann.index + '1231', format='%Y%m%d')
 
     # Quarterly reported values (Q1,Q2,Q3,Q4; with fiscal year ending 31st Dec):
-    df['income_sheet_quar'] = dftmp[dftmp.index.to_series().str.startswith('Q')]
+    df_income_sheet_quar = dftmp[dftmp.index.to_series().str.startswith('Q')]
     # Convert fiscal-year datetime format to format compatible with PeriodIndex
-    df['income_sheet_quar']['FiscalDate'] = df['income_sheet_quar'].index.to_series().apply(lambda x: x[-4:] + x[:2])
+    df_income_sheet_quar['FiscalDate'] = df_income_sheet_quar.index.to_series().apply(lambda x: x[-4:] + x[:2])
     # use this to convert index to datetime format string
-    df['income_sheet_quar'].index = pd.PeriodIndex(df['income_sheet_quar']['FiscalDate'].to_list(),
+    df_income_sheet_quar.index = pd.PeriodIndex(df_income_sheet_quar['FiscalDate'].to_list(),
                                                    freq='Q-DEC').strftime('%d-%m-%Y')
-    df['income_sheet_quar'] = df['income_sheet_quar'].drop(columns='FiscalDate')
+    df_income_sheet_quar = df_income_sheet_quar.drop(columns='FiscalDate')
     # Convert index from string to datetime
-    df['income_sheet_quar'].index = pd.to_datetime(df['income_sheet_quar'].index)
+    df_income_sheet_quar.index = pd.to_datetime(df_income_sheet_quar.index)
 
-    df['income_sheet_quar'] = df['income_sheet_quar'].sort_index()
-    df['income_sheet_ann'] = df['income_sheet_ann'].sort_index()
+    df_income_sheet_quar = df_income_sheet_quar.sort_index()
+    df_income_sheet_ann = df_income_sheet_ann.sort_index()
 
-    # df['income_sheet_ann'].head()
-    # df['income_sheet_quar'].head()
+    # df_income_sheet_ann.head()
+    # df_income_sheet_quar.head()
 
-    # return df['income_sheet_ann']
-    return df['income_sheet_quar']
+    # return df_income_sheet_ann
+    return df_income_sheet_quar
 
 
 def balance_sheet():
@@ -72,30 +72,30 @@ def balance_sheet():
     df = {}
     # # Annual reported values:
     # # Mask to drop where reported by quarter, leaving behind just years, e.g. 2019
-    # # df['balance_sheet_ann'] = dftmp[~dftmp.index.to_series().str.startswith('Q')]
-    # df['balance_sheet_ann'] = dftmp[dftmp.index.to_series().str.startswith('Q4')]
+    # # df_balance_sheet_ann = dftmp[~dftmp.index.to_series().str.startswith('Q')]
+    # df_balance_sheet_ann = dftmp[dftmp.index.to_series().str.startswith('Q4')]
     # # Convert index to datetime
-    # # df['balance_sheet_ann'].index = pd.to_datetime(df['balance_sheet_ann'].index+'1231', format='%Y%m%d')
-    # df['balance_sheet_ann'].index = pd.to_datetime(df['balance_sheet_ann'].index+'1231', format='Q4 %Y%m%d')
+    # # df_balance_sheet_ann.index = pd.to_datetime(df_balance_sheet_ann.index+'1231', format='%Y%m%d')
+    # df_balance_sheet_ann.index = pd.to_datetime(df_balance_sheet_ann.index+'1231', format='Q4 %Y%m%d')
 
     # Quarterly reported values (Q1,Q2,Q3,Q4; with fiscal year ending 31st Dec):
-    df['balance_sheet_quar'] = dftmp[dftmp.index.to_series().str.startswith('Q')]
+    df_balance_sheet_quar = dftmp[dftmp.index.to_series().str.startswith('Q')]
     # Convert fiscal-year datetime format to format compatible with PeriodIndex
-    df['balance_sheet_quar']['FiscalDate'] = df['balance_sheet_quar'].index.to_series().apply(lambda x: x[-4:] + x[:2])
+    df_balance_sheet_quar['FiscalDate'] = df_balance_sheet_quar.index.to_series().apply(lambda x: x[-4:] + x[:2])
     # use this to convert index to datetime format string
-    df['balance_sheet_quar'].index = pd.PeriodIndex(df['balance_sheet_quar']['FiscalDate'].to_list(),
+    df_balance_sheet_quar.index = pd.PeriodIndex(df_balance_sheet_quar['FiscalDate'].to_list(),
                                                     freq='Q-DEC').strftime('%d-%m-%Y')
-    df['balance_sheet_quar'] = df['balance_sheet_quar'].drop(columns='FiscalDate')
+    df_balance_sheet_quar = df_balance_sheet_quar.drop(columns='FiscalDate')
     # Convert index from string to datetime
-    df['balance_sheet_quar'].index = pd.to_datetime(df['balance_sheet_quar'].index)
+    df_balance_sheet_quar.index = pd.to_datetime(df_balance_sheet_quar.index)
 
-    df['balance_sheet_quar'] = df['balance_sheet_quar'].sort_index()
-    # df['balance_sheet_ann'] = df['balance_sheet_ann'].sort_index()
+    df_balance_sheet_quar = df_balance_sheet_quar.sort_index()
+    # df_balance_sheet_ann = df_balance_sheet_ann.sort_index()
 
-    # df['balance_sheet_ann'].head()
-    # df['balance_sheet_quar'].head()
+    # df_balance_sheet_ann.head()
+    # df_balance_sheet_quar.head()
 
-    return df['balance_sheet_quar']
+    return df_balance_sheet_quar
 
 
 def shares():
@@ -116,28 +116,28 @@ def shares():
     df = {}
     # Annual reported values:
     # Mask to drop where reported by quarter, leaving behind just years, e.g. 2019
-    df['shares_ann'] = dftmp[~dftmp.index.to_series().str.startswith('Q')]
+    df_shares_ann = dftmp[~dftmp.index.to_series().str.startswith('Q')]
     # Convert index to datetime
-    df['shares_ann'].index = pd.to_datetime(df['shares_ann'].index + '1231', format='%Y%m%d')
+    df_shares_ann.index = pd.to_datetime(df_shares_ann.index + '1231', format='%Y%m%d')
 
     # Quarterly reported values (Q1,Q2,Q3,Q4; with fiscal year ending 31st Dec):
-    df['shares_quar'] = dftmp[dftmp.index.to_series().str.startswith('Q')]
+    df_shares_quar = dftmp[dftmp.index.to_series().str.startswith('Q')]
     # Convert fiscal-year datetime format to format compatible with PeriodIndex
-    df['shares_quar']['FiscalDate'] = df['shares_quar'].index.to_series().apply(lambda x: x[-4:] + x[:2])
+    df_shares_quar['FiscalDate'] = df_shares_quar.index.to_series().apply(lambda x: x[-4:] + x[:2])
     # use this to convert index to datetime format string
-    df['shares_quar'].index = pd.PeriodIndex(df['shares_quar']['FiscalDate'].to_list(), freq='Q-DEC').strftime(
+    df_shares_quar.index = pd.PeriodIndex(df_shares_quar['FiscalDate'].to_list(), freq='Q-DEC').strftime(
         '%d-%m-%Y')
-    df['shares_quar'] = df['shares_quar'].drop(columns='FiscalDate')
+    df_shares_quar = df_shares_quar.drop(columns='FiscalDate')
     # Convert index from string to datetime
-    df['shares_quar'].index = pd.to_datetime(df['shares_quar'].index)
+    df_shares_quar.index = pd.to_datetime(df_shares_quar.index)
 
-    df['shares_quar'] = df['shares_quar'].sort_index()
-    df['shares_ann'] = df['shares_ann'].sort_index()
+    df_shares_quar = df_shares_quar.sort_index()
+    df_shares_ann = df_shares_ann.sort_index()
 
-    # df['shares_ann'].head()
-    # df['shares_quar'].head()
+    # df_shares_ann.head()
+    # df_shares_quar.head()
 
-    return df['shares_quar']
+    return df_shares_quar
 
 
 def margins():
@@ -160,33 +160,33 @@ def margins():
     df = {}
     # Annual reported values:
     # Mask to drop where reported by quarter, leaving behind just years, e.g. 2019
-    df['PriceAndMarginInfo_ann'] = dftmp[~dftmp.index.to_series().str.startswith('Q')]
+    df_PriceAndMarginInfo_ann = dftmp[~dftmp.index.to_series().str.startswith('Q')]
     # Convert index to datetime
-    df['PriceAndMarginInfo_ann'].index = pd.to_datetime(df['PriceAndMarginInfo_ann'].index + '1231', format='%Y%m%d')
+    df_PriceAndMarginInfo_ann.index = pd.to_datetime(df_PriceAndMarginInfo_ann.index + '1231', format='%Y%m%d')
 
     # Quarterly reported values (Q1,Q2,Q3,Q4; with fiscal year ending 31st Dec):
-    df['PriceAndMarginInfo_quar'] = dftmp[dftmp.index.to_series().str.startswith('Q')]
+    df_PriceAndMarginInfo_quar = dftmp[dftmp.index.to_series().str.startswith('Q')]
     # Convert fiscal-year datetime format to format compatible with PeriodIndex
-    df['PriceAndMarginInfo_quar']['FiscalDate'] = df['PriceAndMarginInfo_quar'].index.to_series().apply(
+    df_PriceAndMarginInfo_quar['FiscalDate'] = df_PriceAndMarginInfo_quar.index.to_series().apply(
         lambda x: x[-4:] + x[:2])
     # use this to convert index to datetime format string
-    df['PriceAndMarginInfo_quar'].index = pd.PeriodIndex(df['PriceAndMarginInfo_quar']['FiscalDate'].to_list(),
+    df_PriceAndMarginInfo_quar.index = pd.PeriodIndex(df_PriceAndMarginInfo_quar['FiscalDate'].to_list(),
                                                          freq='Q-DEC').strftime('%d-%m-%Y')
-    df['PriceAndMarginInfo_quar'] = df['PriceAndMarginInfo_quar'].drop(columns='FiscalDate')
+    df_PriceAndMarginInfo_quar = df_PriceAndMarginInfo_quar.drop(columns='FiscalDate')
     # Convert index from string to datetime
-    df['PriceAndMarginInfo_quar'].index = pd.to_datetime(df['PriceAndMarginInfo_quar'].index)
+    df_PriceAndMarginInfo_quar.index = pd.to_datetime(df_PriceAndMarginInfo_quar.index)
 
-    df['PriceAndMarginInfo_quar'] = df['PriceAndMarginInfo_quar'].sort_index()
-    df['PriceAndMarginInfo_ann'] = df['PriceAndMarginInfo_ann'].sort_index()
+    df_PriceAndMarginInfo_quar = df_PriceAndMarginInfo_quar.sort_index()
+    df_PriceAndMarginInfo_ann = df_PriceAndMarginInfo_ann.sort_index()
 
     # How many USD Shell managed to sell it's oil for
-    df['PriceAndMarginInfo_quar']['Realised oil price global'] = df['PriceAndMarginInfo_quar']['Global'].iloc[:, 0]
+    df_PriceAndMarginInfo_quar['Realised oil price global'] = df_PriceAndMarginInfo_quar['Global'].iloc[:, 0]
     # How many USD Shell managed to sell it's gas for
-    df['PriceAndMarginInfo_quar']['Realised gas price global'] = df['PriceAndMarginInfo_quar']['Global'].iloc[:, 1]
+    df_PriceAndMarginInfo_quar['Realised gas price global'] = df_PriceAndMarginInfo_quar['Global'].iloc[:, 1]
 
-    # df['PriceAndMarginInfo_ann'].head()
-    # df['PriceAndMarginInfo_quar'].head()
-    return df['PriceAndMarginInfo_quar']
+    # df_PriceAndMarginInfo_ann.head()
+    # df_PriceAndMarginInfo_quar.head()
+    return df_PriceAndMarginInfo_quar
 
 
 def volumes():
@@ -207,28 +207,28 @@ def volumes():
     df = {}
     # Annual reported values:
     # Mask to drop where reported by quarter, leaving behind just years, e.g. 2019
-    df['volumes_ann'] = dftmp[~dftmp.index.to_series().str.startswith('Q')]
+    df_volumes_ann = dftmp[~dftmp.index.to_series().str.startswith('Q')]
     # Convert index to datetime
-    df['volumes_ann'].index = pd.to_datetime(df['volumes_ann'].index + '1231', format='%Y%m%d')
+    df_volumes_ann.index = pd.to_datetime(df_volumes_ann.index + '1231', format='%Y%m%d')
 
     # Quarterly reported values (Q1,Q2,Q3,Q4; with fiscal year ending 31st Dec):
-    df['volumes_quar'] = dftmp[dftmp.index.to_series().str.startswith('Q')]
+    df_volumes_quar = dftmp[dftmp.index.to_series().str.startswith('Q')]
     # Convert fiscal-year datetime format to format compatible with PeriodIndex
-    df['volumes_quar']['FiscalDate'] = df['volumes_quar'].index.to_series().apply(
+    df_volumes_quar['FiscalDate'] = df_volumes_quar.index.to_series().apply(
         lambda x: x[-4:] + x[:2])
     # use this to convert index to datetime format string
-    df['volumes_quar'].index = pd.PeriodIndex(df['volumes_quar']['FiscalDate'].to_list(),
+    df_volumes_quar.index = pd.PeriodIndex(df_volumes_quar['FiscalDate'].to_list(),
                                               freq='Q-DEC').strftime('%d-%m-%Y')
-    df['volumes_quar'] = df['volumes_quar'].drop(columns='FiscalDate')
+    df_volumes_quar = df_volumes_quar.drop(columns='FiscalDate')
     # Convert index from string to datetime
-    df['volumes_quar'].index = pd.to_datetime(df['volumes_quar'].index)
+    df_volumes_quar.index = pd.to_datetime(df_volumes_quar.index)
 
-    df['volumes_quar'] = df['volumes_quar'].sort_index()
-    df['volumes_ann'] = df['volumes_ann'].sort_index()
+    df_volumes_quar = df_volumes_quar.sort_index()
+    df_volumes_ann = df_volumes_ann.sort_index()
 
-    # df['volumes_ann'].head()
-    # print(df['volumes_quar'].head())
-    # print(df['volumes_quar'].columns)
+    # df_volumes_ann.head()
+    # print(df_volumes_quar.head())
+    # print(df_volumes_quar.columns)
 
     # Rename a few columns
     # Volumes columns:
@@ -242,16 +242,23 @@ def volumes():
     #        'LNG liquefaction volumes (million tonnes)',
     #        'LNG sales volumes (million tonnes)']
 
-    df['volumes_quar'] = df['volumes_quar'].rename(
-        columns={'Total production': 'Total barrels of oil equivalent production'})
-    df['volumes_quar'] = df['volumes_quar'][
-        ['Total natural gas production', 'Total barrels of oil equivalent production']]
+    # df_volumes_quar = df_volumes_quar.rename(
+    #     columns={'Total production': 'Total barrels of oil equivalent production'})
+
+    # # How much volume Shell managed to sell
+    # df_volumes_quar['Brent sale volume'] = df_volumes_quar['Europe'].iloc[:, 0] + \
+    #                                        df_volumes_quar['Asia'].iloc[:, 0] + \
+    #                                        df_volumes_quar['Oceana'].iloc[:, 0] + \
+    #                                        df_volumes_quar['SPDC1 - Nigeria'].iloc[:, 0] + \
+    #                                        df_volumes_quar['Other Africa'].iloc[:, 0]
+    # df_volumes_quar['WTI sale volume']
+
 
     # Fill & interpolate missing dates (resampling):
-    # df['volumes_quar'] = df['volumes_quar'].resample('D')
-    # df['volumes_quar'] = df['volumes_quar'].interpolate(method='polynomial', order=2)
-    # df['volumes_quar'] = df['volumes_quar'].ffill()
+    # df_volumes_quar = df_volumes_quar.resample('D')
+    # df_volumes_quar = df_volumes_quar.interpolate(method='polynomial', order=2)
+    # df_volumes_quar = df_volumes_quar.ffill()
 
-    # print(df['volumes_quar']); assert False
+    # print(df_volumes_quar); assert False
 
-    return df['volumes_quar']
+    return df_volumes_quar
