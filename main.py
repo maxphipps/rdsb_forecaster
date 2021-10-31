@@ -3,6 +3,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge, Lasso, ElasticNet, BayesianRidge
 from sklearn.metrics import mean_squared_error, r2_score
 
+import datetime
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
@@ -42,6 +44,13 @@ class RDSBModel:
                     financials_utils.volumes())
         df_fin = pd.concat(fin_list, join='outer', axis=1)
 
+        # Unaudited accounts are published 30 days after financial date
+        # Shift the financial data forwards to avoid look forward
+        # E.g. Q3 = 1/7 to 30/9, but market cannot see until 31/10
+        df_fin.index = df_fin.index + datetime.timedelta(days=30)
+        # Backfill to populate all days in the quarter
+        df_fin = df_fin.resample('D').bfill()
+
         # Construct cmg price dataframe
         self.df_cmg = cmg_utils.get_cmg()
 
@@ -51,16 +60,12 @@ class RDSBModel:
         # Construct main dataframe
         self.df_main = pd.concat([df_fin, self.df_cmg, self.df_oil_demand, df_sp], join='outer', axis=1)
 
-        # self.df_main = self.df_main.interpolate(method='polynomial', order=2)  # TODO CHEAT
-        self.df_main = self.df_main.bfill() # TODO: CHEAT - backfill, since we take 3M rolling avgs of these values
-        self.df_main = self.df_main.ffill()
-
-        # Approximation: Backfill production volumes data from 2014
-        self.df_main['Total natural gas production'] = self.df_main['Total natural gas production'].bfill()
-        self.df_main['Total liquids production'] = self.df_main['Total liquids production'].bfill()
-        # self.df_main['Total barrels of oil equivalent production'] = self.df_main['Total barrels of oil equivalent production'].bfill()
-        self.df_main['world production'] = self.df_main['world production'].bfill()
-        self.df_main['world consumption'] = self.df_main['world consumption'].bfill()
+        # # Approximation: Backfill production volumes data from 2014
+        # self.df_main['Total natural gas production'] = self.df_main['Total natural gas production'].bfill()
+        # self.df_main['Total liquids production'] = self.df_main['Total liquids production'].bfill()
+        # # self.df_main['Total barrels of oil equivalent production'] = self.df_main['Total barrels of oil equivalent production'].bfill()
+        # self.df_main['world production'] = self.df_main['world production'].bfill()
+        # self.df_main['world consumption'] = self.df_main['world consumption'].bfill()
 
         # TODO: harvest from public data
         self.df_main['Shares outstanding at the end of the period'] = self.df_main['Shares outstanding at the end of the period'].bfill()
@@ -121,12 +126,15 @@ class RDSBModel:
                     self.df_main[comcol].multiply(self.df_main['Property, plant and equipment'],axis=0)
 
         # Calculate rolling means
-        for col in ['brent x vol', 'wticrude x vol', 'naturalgas x vol',
+        for col in ['Natural Gas Price Commercial Sector x vol',
+                    'Gasoline All Grades Retail Price x vol',
+                    'brent x vol', 'wticrude x vol', 'naturalgas x vol',
                     'brent x CapEmployed', 'wticrude x CapEmployed', 'naturalgas x CapEmployed',
                     'Gasoline All Grades Retail Price x vol', 'Natural Gas Price Industrial Sector x vol',
                     'Depreciation, depletion and amortisation_neg', 'Purchases_neg', 'Revenue',
                     'Revenue-Depreciation',
-                    'Total assets', 'Total liabilities_neg', 'Income from continuing operations',
+                    'Total assets', 'Total liabilities_neg',
+                    'Income from continuing operations', 'Income attributable to Royal Dutch Shell plc shareholders',
                     'NAV',
                     'Debt',
                     'world production', 'world consumption', 'world consumption-production',
@@ -137,16 +145,33 @@ class RDSBModel:
             self.df_main[col+'6M'] = self.df_main[col].rolling(6 * 30).mean()
             self.df_main[col+'3M'] = self.df_main[col].rolling(3 * 30).mean()
             self.df_main[col+'1M'] = self.df_main[col].rolling(1 * 30).mean()
+            self.df_main[col+'26D'] = self.df_main[col].rolling(1 * 26).mean()
+            self.df_main[col+'12D'] = self.df_main[col].rolling(1 * 12).mean()
+
+        # Calculate 1st order changes in CMG prices, i.e. using change in price as predictor of future CMG prices
+        for _ma in [(60, 5),
+                    (60, 10),
+                    (60, 20),
+                    (60, 30)]:
+            for col in ['Natural Gas Price Commercial Sector x vol',
+                        'Gasoline All Grades Retail Price x vol']:
+                # self.df_main[col+'MACD'] = self.df_main[col+'12D'] - self.df_main[col+'26D']
+                # self.df_main[col+'Delta'] = self.df_main[col+'26D'].pct_change(periods=26).ffill() * 100.
+                # _ma[0] = averaging period
+                # _ma[1] = look back period for differencing
+                self.df_main[col+f'Delta{_ma[0]}_{_ma[1]}'] = self.df_main[col].rolling(_ma[0], center=True).mean()\
+                                                      .pct_change(periods=_ma[1]).ffill() * 100.
+
+        # self.df_main = self.df_main.dropna(axis=0)
 
     def train_test_split(self):
 
         # Visualise the features
-        self.df_main[self.feature_cols].plot()
+        self.df_main[self.feature_cols].plot(style='x-', markersize=2)
         plt.show()
         
         # Data to regress
         self.df_regdata = self.df_main[self.feature_cols+[self.regress_col]]
-        self.df_regdata.to_csv('tmp.csv')
 
         # TODO CHEAT: temporarily commented
         # Avoid look-forward: shift the below columns forward
@@ -309,11 +334,11 @@ class RDSBModel:
 if __name__ == '__main__':
 
     feature_cols = [
-        'U.S. Commercial Inventory Crude Oil and Other Liquids',
+        # 'U.S. Commercial Inventory Crude Oil and Other Liquids',
         # 'world production',
         # 'world consumption',
         # 'world production3M',
-        'world consumption3M',
+        # 'world consumption3M',
         # 'world consumption-production',
         # 'world consumption/production',
         # 'world consumption-production3M',
@@ -358,6 +383,12 @@ if __name__ == '__main__':
         # 'Gasoline x vol',
         # 'Fuel Oil x vol',
         'Gasoline All Grades Retail Price x vol',
+        # 'Gasoline All Grades Retail Price x volDelta30',
+        # 'Gasoline All Grades Retail Price x volDelta60_5',
+        # 'Gasoline All Grades Retail Price x volDelta120',
+        # 'Gasoline All Grades Retail Price x volDelta60_10',
+        # 'Gasoline All Grades Retail Price x volDelta60_20',
+        # 'Gasoline All Grades Retail Price x volDelta60_30',
         # 'Gasoline All Grades Retail Price x vol3M',
 
         # 'Realised oil price global',
@@ -365,12 +396,18 @@ if __name__ == '__main__':
         # 'Realised oil price global x vol',
         # 'Realised gas price global x vol',
         # 'Natural Gas Price Industrial Sector',
+        # 'Natural Gas Price Industrial Sector x vol3M',
         # 'Natural Gas Price Commercial Sector',
         'Natural Gas Price Commercial Sector x vol',
-        # 'Natural Gas Price Industrial Sector x vol3M',
+        # 'Natural Gas Price Commercial Sector x volDelta30',
+        # 'Natural Gas Price Commercial Sector x volDelta60_5',
+        # 'Natural Gas Price Commercial Sector x volDelta120',
+        # 'Natural Gas Price Commercial Sector x volDelta60_10',
+        # 'Natural Gas Price Commercial Sector x volDelta60_20',
+        # 'Natural Gas Price Commercial Sector x volDelta60_30',
         # 'naturalgas x vol',
         # 'brent x vol',
-        # 'wticrude x vol',
+        'wticrude x vol',
         # 'naturalgas x vol3M',
         # 'brent x vol3M',
         # 'wticrude x vol3M',
@@ -383,6 +420,7 @@ if __name__ == '__main__':
         # 'naturalgas x vol24M',
         # 'brent x vol24M',
         # 'wticrude x vol24M',
+        ### Income sheet
         ### Revenue
         # 'Revenue',
         # 'Revenue3M',
@@ -395,7 +433,7 @@ if __name__ == '__main__':
         # 'Purchases_neg6M',
         # 'Purchases_neg12M',
         # 'Purchases_neg24M',
-        'Depreciation, depletion and amortisation_neg',
+        # 'Depreciation, depletion and amortisation_neg',
         # 'Depreciation, depletion and amortisation_neg3M',
         # 'Depreciation, depletion and amortisation_neg6M',
         # 'Depreciation, depletion and amortisation_neg12M',
@@ -406,21 +444,25 @@ if __name__ == '__main__':
         # 'Revenue-Depreciation6M',
         # 'Revenue-Depreciation12M',
         # 'Revenue-Depreciation24M',
+        # 'Income from continuing operations',
+        # 'Income from continuing operations3M',
+        # 'Income from continuing operations6M',
+        # 'Income from continuing operations12M',
+        'Income attributable to Royal Dutch Shell plc shareholders',
+        # 'Income attributable to Royal Dutch Shell plc shareholders12M',
+        ### Balance sheet
         # 'Debt',
         # 'Debt3M',
-        # 'Total assets', 'Total liabilities_neg',
+        'Total assets', 'Total liabilities_neg',
         # 'Total assets3M', 'Total liabilities_neg3M',
         # 'Total assets6M', 'Total liabilities_neg6M',
         # 'Total assets12M', 'Total liabilities_neg12M',
         # 'Total assets24M', 'Total liabilities_neg24M',
-        'Income from continuing operations',
-        # 'Income from continuing operations3M',
-        # 'Income from continuing operations12M',
         ### Assets-liabilities
-        # 'NAV',
+        'NAV',
         # 'NAV3M',
         # 'NAV6M',
-        'NAV12M',
+        # 'NAV12M',
         # 'NAV24M',
     ]
 
