@@ -1,10 +1,11 @@
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import Ridge, Lasso, ElasticNet, BayesianRidge
+from sklearn.linear_model import Ridge, Lasso, ElasticNet, LinearRegression, TweedieRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 
+import copy
 import datetime
 
+import matplotlib.pylab as pl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
@@ -22,6 +23,151 @@ class RDSBModel:
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
+
+    @staticmethod
+    def forecast_production_volume(df_feat_target, target_col, plot_forecast=False):
+        """
+        Forecasts production volumes
+        :param df_feat_target: Unprocessed (raw) features and target variable
+        :param target_col: target variable column
+        :param plot_forecast: whether to plot the final prediction
+        :return:
+        """
+        # Function to get current feature columns
+        get_feat_cols = lambda _df: [col for col in _df if col != target_col]
+        # Enrich input data with lagging features
+        for col in get_feat_cols(df_feat_target):
+            # looking n days behind
+            for lag in range(10, 160, 10): # [30, 60, 90, 140, 150, 160]:
+                df_feat_target[col + f'_lag{lag}'] = df_feat_target[col].shift(lag)
+        # Normalise feature columns
+        liq_idx0 = df_feat_target[target_col].dropna().iloc[0]
+        for col in get_feat_cols(df_feat_target):
+            df_feat_target[col] *= liq_idx0 / df_feat_target[col].dropna().iloc[0]
+        df_feat_target = df_feat_target.sort_index()
+
+        # Setup test train split
+        _split = 0.33
+        # Perform test train split
+        df_test_train = df_feat_target.dropna()
+        n_test = int(np.ceil(len(df_test_train) * _split))
+        dates_all = df_test_train.index
+        dates_train = dates_all[:-n_test]
+        dates_test = dates_all[-n_test:]
+        X_train_all_feat = df_test_train.drop(columns=[target_col]).iloc[:-n_test]
+        Y_train = df_test_train[target_col].iloc[:-n_test]
+        X_test_all_feat = df_test_train.drop(columns=[target_col]).iloc[-n_test:]
+        Y_test = df_test_train[target_col][-n_test:]
+
+        def feature_importance(X_data, regr):
+            """
+            Simple feature importance metric.
+            Prints the coefficients scaled by median value of the X_data passed in.
+            :param X_data: features
+            :param regr: model
+            :return:
+            """
+            unsorted_list = []
+            for col, coeff in zip(X_data.columns, regr.coef_):
+                coeff_norm_abs = abs(coeff / X_data[col].median())
+                unsorted_list.append([col, coeff_norm_abs, coeff])
+            unsorted_list.sort(key=lambda x: x[1])
+            print(f'{"Feature name":60s} Coefficient  Negative Coeff')
+            for tup in unsorted_list:
+                if tup[1] != 0.0:
+                    print(f'{tup[0]:60s} {tup[1]:.5e}  {tup[2] < 0.0}')
+
+        def feature_selection_and_fit_model():
+            """
+            Feature selection:
+            Returns the top n features most correlated with the target variable
+            that minimises the test MSE.
+            TODO: Approach is quite rough and not particularly conventional - not ideal
+            :return:
+            """
+
+            # calculate the correlation matrix
+            corr = abs(df_test_train.corr())
+            corr = corr.sort_values(by=target_col, ascending=False)[[target_col]]
+
+            # print(corr)
+            # # plot the heatmap
+            # sns.heatmap(corr, xticklabels=corr.columns, yticklabels=corr.index)
+            # plt.tight_layout()
+            # plt.show()
+
+            def get_trial_features(nfeat):
+                """
+                Top n most correlated features
+                :return:
+                """
+                feature_cols = list(corr.index[1:nfeat + 1].values)
+                assert target_col not in feature_cols
+                return feature_cols
+
+            # Feature extraction: top n correlated features
+            df_results = pd.DataFrame(columns=['nfeatures', 'error', 'mdl'])
+            for i, liq_feat_top_n in enumerate(range(1, 25)):
+                # Isolate features
+                feature_cols = get_trial_features(liq_feat_top_n)
+                X_train = X_train_all_feat[feature_cols]
+                X_test = X_test_all_feat[feature_cols]
+
+                # Train the model
+                regr = LinearRegression()
+                regr.fit(X_train, Y_train)
+                # Make predictions
+                Y_test_pred = regr.predict(X_test)
+
+                # # For debugging and analytics
+                # feature_importance(X_test, regr)
+
+                # Calculate error
+                _err = mean_squared_error(Y_test, Y_test_pred)
+                df_results = df_results.append({'features': feature_cols,
+                                                'nfeatures': liq_feat_top_n,
+                                                'error': _err,
+                                                'mdl': copy.deepcopy(regr)}, ignore_index=True)
+            #     # Plot
+            #     plt.plot(dates_test, Y_test_pred, label=f'pred(n={liq_feat_top_n}); MSE={_err:.1f}', alpha=0.5)
+            # plt.plot(df_test_train[target_col], label='train')
+            # plt.legend()
+            # plt.show()
+
+            df_results = df_results.set_index('nfeatures')
+            # # Plot error curve
+            # df_results['error'].plot()
+            # plt.show()
+            # Optimise number of features
+            opt_n_features = int(df_results.index[df_results['error'].argmin()])
+            # loc rather than iloc, since we want the index with value=opt_n_features
+            return df_results.loc[opt_n_features]
+
+        # Feature selection and fit model
+        df_results = feature_selection_and_fit_model()
+        # unpack
+        feature_cols = df_results['features']
+        regr = df_results['mdl']
+
+        # Print feature importance for fitted model
+        X_test = X_test_all_feat[feature_cols]
+        feature_importance(X_test, regr)
+
+        # Make predictions across all dates
+        X_test = df_feat_target[feature_cols].dropna()
+        Y_test_pred = regr.predict(X_test)
+
+        # Plot
+        if plot_forecast:
+            plt.plot(X_test.index, Y_test_pred, alpha=0.5)
+            plt.plot(df_feat_target.index, df_feat_target[target_col], label='train')
+            plt.legend()
+            plt.show()
+
+        # Return dataframe of predicted production volumes
+        df_pred = pd.DataFrame(index=X_test.index,
+                               data={f'{target_col} forecast': Y_test_pred})
+        return df_pred
 
     def read_data(self):
         """
@@ -60,18 +206,50 @@ class RDSBModel:
         # Construct main dataframe
         self.df_main = pd.concat([df_fin, self.df_cmg, self.df_oil_demand, df_sp], join='outer', axis=1)
 
+
+        # Forecast the production volumes
+        for volume_col in ['Total natural gas production', 'Total liquids production']:
+            # Construct features
+            df_liq = pd.concat([self.df_main[volume_col], self.df_oil_demand], join='outer', axis=1)
+            df_pred_volume = self.forecast_production_volume(df_liq, target_col=volume_col)
+            # Override exact onto forecast values
+            df_pred_volume = df_pred_volume.rename(columns={f'{volume_col} forecast':
+                                                            volume_col})
+            self.df_main[volume_col] = self.df_main[[volume_col]].combine_first(df_pred_volume)
+    
+            # # Visual data verification: successful join
+            # ax = plt.gca()
+            # self.df_main[volume_col].plot(ax=ax,alpha=0.5,color='r')
+            # df_pred_volume.plot(ax=ax,alpha=0.5,color='g')
+            # plt.show()
+
+
         # # Approximation: Backfill production volumes data from 2014
         # self.df_main['Total natural gas production'] = self.df_main['Total natural gas production'].bfill()
         # self.df_main['Total liquids production'] = self.df_main['Total liquids production'].bfill()
         # # self.df_main['Total barrels of oil equivalent production'] = self.df_main['Total barrels of oil equivalent production'].bfill()
-        # self.df_main['world production'] = self.df_main['world production'].bfill()
-        # self.df_main['world consumption'] = self.df_main['world consumption'].bfill()
+        # self.df_main['PAPR_WORLD'] = self.df_main['PAPR_WORLD'].bfill()
+        # self.df_main['PATC_WORLD'] = self.df_main['PATC_WORLD'].bfill()
 
-        # TODO: harvest from public data
-        self.df_main['Shares outstanding at the end of the period'] = self.df_main['Shares outstanding at the end of the period'].bfill()
-        self.df_main['Income from continuing operations'] = self.df_main['Income from continuing operations'].bfill()
+        # Fill in gaps in data
         self.df_main['Total assets'] = self.df_main['Total assets'].interpolate(method='polynomial', order=1, limit_direction='backward')
         self.df_main['Total liabilities'] = self.df_main['Total liabilities'].interpolate(method='polynomial', order=1, limit_direction='backward')
+        # TODO: backcasting
+        # TODO: harvest from public data
+        self.df_main['Shares outstanding at the end of the period'] = self.df_main['Shares outstanding at the end of the period'].bfill()
+        backcast_features = False
+        if backcast_features:
+            self.df_main = self.df_main.bfill()
+
+        forecast_features = True
+        if forecast_features:
+            # Income from 5Y rolling mean
+            for col in ['Income from continuing operations',
+                        'Income attributable to Royal Dutch Shell plc shareholders']:
+                self.df_main[col] = self.df_main[col].fillna(self.df_main[col].rolling(5*365, min_periods=1).mean())
+                # self.df_main[col] = self.df_main[col].fillna(self.df_main[col].rolling(5*365, min_periods=1).max())
+            # All others via ffill
+            self.df_main = self.df_main.ffill()
 
     def extract_features(self):
         # Calculate possible target variables to choose from
@@ -88,8 +266,8 @@ class RDSBModel:
 
         self.df_main['Revenue-Depreciation'] = self.df_main['Revenue'] - self.df_main['Depreciation, depletion and amortisation']
 
-        self.df_main['world consumption-production'] = self.df_main['world consumption'] - self.df_main['world production']
-        self.df_main['world consumption/production'] = self.df_main['world consumption'] / self.df_main['world production']
+        self.df_main['world consumption-production'] = self.df_main['PATC_WORLD'] - self.df_main['PAPR_WORLD']
+        self.df_main['world consumption/production'] = self.df_main['PATC_WORLD'] / self.df_main['PAPR_WORLD']
 
         # V1: Capital employed = volume produced
         # Calculate cmg price x volume produced
@@ -137,7 +315,7 @@ class RDSBModel:
                     'Income from continuing operations', 'Income attributable to Royal Dutch Shell plc shareholders',
                     'NAV',
                     'Debt',
-                    'world production', 'world consumption', 'world consumption-production',
+                    'PAPR_WORLD', 'PATC_WORLD', 'world consumption-production',
                     'Close US cents', 'Market cap']:
             # self.df_main[col+'36M'] = self.df_main[col].rolling(36 * 30).mean()
             self.df_main[col+'24M'] = self.df_main[col].rolling(24 * 30).mean()
@@ -206,7 +384,7 @@ class RDSBModel:
 
         # n_test = 14 # 1800
         # n_test = 15#10 # 12 # 1800
-        n_test = int(np.ceil(self.years_test *12*30))
+        n_test = int(np.ceil(self.years_test * 365))
 
         # https://scikit-learn.org/stable/auto_examples/linear_model/plot_ols.html#sphx-glr-auto-examples-linear-model-plot-ols-py
 
@@ -301,8 +479,10 @@ class RDSBModel:
         # Print the coefficients scaled by avg value of its column
         # Effectively an importance plot
         unsorted_list = []
+        final_train_date = self.X_dates_train.max()
         for col, coeff in zip(self.df_regdata.columns, regr.coef_):
-            coeff_norm_abs = abs(coeff/self.df_regdata[col].median())
+            # coeff_norm_abs = abs(coeff/self.df_regdata[col].median())
+            coeff_norm_abs = abs(coeff/self.df_regdata[col][:final_train_date].median())
             unsorted_list.append([col, coeff_norm_abs, coeff])
         unsorted_list.sort(key=lambda x: x[1])
         print(f'{"Feature name":60s} Coefficient  Negative Coeff')
@@ -335,9 +515,11 @@ if __name__ == '__main__':
 
     feature_cols = [
         # 'U.S. Commercial Inventory Crude Oil and Other Liquids',
-        # 'world production',
-        # 'world consumption',
-        # 'world production3M',
+        # 'T3_STCHANGE_WORLD',
+        # 'PASC_US',
+        # 'PAPR_WORLD',
+        # 'PATC_WORLD',
+        # 'PAPR_WORLD3M',
         # 'world consumption3M',
         # 'world consumption-production',
         # 'world consumption/production',
@@ -444,12 +626,13 @@ if __name__ == '__main__':
         # 'Revenue-Depreciation6M',
         # 'Revenue-Depreciation12M',
         # 'Revenue-Depreciation24M',
-        # 'Income from continuing operations',
+        # 'Income from continuing operations', # high correlation with 'Income attributable to Royal Dutch Shell plc shareholders'
         # 'Income from continuing operations3M',
         # 'Income from continuing operations6M',
         # 'Income from continuing operations12M',
         'Income attributable to Royal Dutch Shell plc shareholders',
         # 'Income attributable to Royal Dutch Shell plc shareholders12M',
+        # 'Income attributable to Royal Dutch Shell plc shareholders24M',
         ### Balance sheet
         # 'Debt',
         # 'Debt3M',
@@ -459,14 +642,14 @@ if __name__ == '__main__':
         # 'Total assets12M', 'Total liabilities_neg12M',
         # 'Total assets24M', 'Total liabilities_neg24M',
         ### Assets-liabilities
-        'NAV',
+        # 'NAV',
         # 'NAV3M',
         # 'NAV6M',
         # 'NAV12M',
         # 'NAV24M',
     ]
 
-    # feature_cols = ['world production',
+    # feature_cols = ['PAPR_WORLD',
     #                 'Total assets3M',
     #                 'naturalgas x vol',
     #                 'Total liabilities_neg3M',
@@ -487,12 +670,13 @@ if __name__ == '__main__':
     # regress_col = 'Total revenue and other income'
 
     # Create linear regression object
+    # mdl = TweedieRegressor(power=0)
     mdl = Ridge(positive=False)
     # mdl = ElasticNet(l1_ratio=0.05, positive=True)
     # mdl = BayesianRidge()
 
     param = {'regress_col': regress_col, 'feature_cols': feature_cols,
-             'years_test': 5, 'mdl': mdl}
+             'years_test': 10, 'mdl': mdl}
     mdl = RDSBModel(**param)
 
     mdl.read_data()

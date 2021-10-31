@@ -69,10 +69,14 @@ def get_cmg() -> pd.DataFrame:
 
     # Values are the mean of the daily spot prices for the entire month, including the 1st date in the next month
     # E.g. "Jul 2021" refers to mean of 01/07/2021 to 02/08/2021 spot prices
-    # Since spot prices are readily available, simply shift to mid-month, and interpolate
-    df.index = df.index + timedelta(days=14)
-    df = df.resample('D')
-    df = df.interpolate(method='polynomial', order=2)
+    # # Since spot prices are readily available, simply shift to mid-month, and interpolate.
+    # #   Cannot do this, since inconsistent with average
+    # df.index = df.index + timedelta(days=14)
+    # df = df.resample('D')
+    # df = df.interpolate(method='polynomial', order=2)
+    # Simply ffill to the next month
+    df = df.reindex(df.index.union([df.index[-1] + timedelta(days=30)]))
+    df = df.resample('D').ffill()
 
     # Override with exact daily values where available
     df_brent = __get_daily_cmg_data('brent-crude-oil-prices-10-year-daily-chart.csv', 'brent')
@@ -113,40 +117,43 @@ def get_cmg() -> pd.DataFrame:
 
 
 def get_oil_demand() -> pd.DataFrame:
-    cols_of_interest = {'PAPR_WORLD': 'world production',
-                        'PATC_WORLD': 'world consumption',
-                        # 'PATC_OECD_EUROPE': 'Europe Petroleum Consumption',
-                        # 'PATC_US': 'U.S. (50 States) Petroleum Consumption',
-                        # '': '',
-                        # '': '',
-                        'T3_STCHANGE_WORLD': 'world inventory net withdrawals',  # million barrels per day
-                        'PASC_US': 'U.S. Commercial Inventory Crude Oil and Other Liquids',  # million barrels
-                        }
+    # cols_of_interest = {#'PAPR_WORLD': 'world production',
+    #                     #'PATC_WORLD': 'world consumption',
+    #                     #'COPR_OPEC': 'OPEC 13 Crude Oil Production',
+    #                     # 'PATC_OECD_EUROPE': 'Europe Petroleum Consumption',
+    #                     # 'PATC_US': 'U.S. (50 States) Petroleum Consumption',
+    #                     # '': '',
+    #                     # '': '',
+    #                     'T3_STCHANGE_WORLD': 'world inventory net withdrawals',  # million barrels per day
+    #                     'PASC_US': 'U.S. Commercial Inventory Crude Oil and Other Liquids',  # million barrels
+    #                     }
 
     # https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
     dateparse = lambda x: datetime.strptime(x, '%b %Y')
-    df = pd.read_csv(path.joinpath('eia/supply_demand/production_consumption_and_inventories.csv'), parse_dates=['source key'], date_parser=dateparse, skiprows=4)
-    df = df.rename(columns={'source key': 'Date', **cols_of_interest})
+    df = pd.read_csv(path.joinpath('eia/supply_demand/production_consumption_and_inventories.csv'),
+                     sep=';', parse_dates=['source key'], date_parser=dateparse, index_col=1, # parse_dates=['source key'], skiprows=4,
+                     na_values='--')
+    # df = df.rename(columns={'source key': 'Date', **cols_of_interest})
+    df = df.rename(columns={'source key': 'Date'})
     df = df.set_index('Date')
+
+    # Change in inventories
+    # df['']
+
+    # drop empty columns
+    df = df.dropna(how='all', axis=1)
 
     # Cull to daterange of interest
     # df = df[df.index > '2008-01-01']
 
-    #### START OF RESAMPLING
-    # Force pandas to resample beginning at a specific data (note how this is end of fiscal year - important)
-    # df.loc[pd.Timestamp('2007-12-29')] = None
-    df = df.sort_index()  # sorting by index
-
-    # Fill & interpolate missing dates (resampling):
-    df = df.resample('D')
-    # df = df.interpolate(method='polynomial', order=2)
-    df = df.ffill()
-    df = df.bfill()
+    # Resample to daily
+    df = df.reindex(df.index.union([df.index[-1] + timedelta(days=30)]))
+    df = df.resample('D').ffill()
 
     # Slice to columns of interest
-    df = df[cols_of_interest.values()]
+    # df = df[cols_of_interest.values()]
 
     # Scale to reasonable size
-    df *= 1E3
+    # df *= 1E3
 
     return df
