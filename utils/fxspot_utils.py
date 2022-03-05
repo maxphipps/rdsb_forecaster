@@ -1,10 +1,12 @@
 
-import pandas as pd
 import datetime
+
+import pandas as pd
+
 
 def read_usdgbp():
     dateparse = lambda x: datetime.datetime.strptime(x, '%b %d, %Y')
-    df_usdgbp = pd.read_csv('data/fxspot/GBPUSD.csv', sep='\t',
+    df_usdgbp = pd.read_csv('data/fxspot/GBPUSD.csv', sep=';',
                             parse_dates=[0], date_parser=dateparse,
                             usecols=[0, 1], index_col=[0])
     df_usdgbp.rename(columns={'Price': 'GBPUSD'}, inplace=True)

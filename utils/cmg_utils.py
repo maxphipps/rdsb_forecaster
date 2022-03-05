@@ -1,9 +1,9 @@
-from datetime import datetime, timedelta
-import pandas as pd
 import pathlib
+from datetime import datetime, timedelta
 
-import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
+
 sns.set()
 
 path = pathlib.PurePath('data/cmg')
@@ -17,7 +17,7 @@ def __get_daily_cmg_data(cmg_fn, tag) -> pd.DataFrame:
     :param tag: Tag for this commodity
     :return:
     """
-    df = pd.read_csv(path.joinpath(cmg_fn), parse_dates=['date'], skiprows=15)
+    df = pd.read_csv(path.joinpath(cmg_fn), parse_dates=['date'], skiprows=15, sep=';')
     df = df.rename(columns={'date': 'Date', ' value': tag})
     df = df.set_index('Date')
 
@@ -62,7 +62,7 @@ def get_cmg() -> pd.DataFrame:
 
     # https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
     dateparse = lambda x: datetime.strptime(x, '%b %Y')
-    df = pd.read_csv(path.joinpath('eia/prices/energy_prices.csv'), parse_dates=['source key'], date_parser=dateparse, skiprows=5)
+    df = pd.read_csv(path.joinpath('eia/prices/energy_prices.csv'), parse_dates=['source key'], date_parser=dateparse, skiprows=5, sep=';')
     df = df.rename(columns={'source key': 'Date', **cols_of_interest})
     df = df.set_index('Date')
     df = df.sort_index()  # sorting by index
@@ -79,8 +79,8 @@ def get_cmg() -> pd.DataFrame:
     df = df.resample('D').ffill()
 
     # Override with exact daily values where available
-    df_brent = __get_daily_cmg_data('brent-crude-oil-prices-10-year-daily-chart.csv', 'brent')
-    df_wticrude = __get_daily_cmg_data('wti-crude-oil-prices-10-year-daily-chart.csv', 'wticrude')
+    df_brent = __get_daily_cmg_data('macrotrendsdotnet/brent-crude-oil-prices-10-year-daily-chart.csv', 'brent')
+    df_wticrude = __get_daily_cmg_data('macrotrendsdotnet/wti-crude-oil-prices-10-year-daily-chart.csv', 'wticrude')
 
     # # Visual data verification
     # ax = plt.gca()
