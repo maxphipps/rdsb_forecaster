@@ -13,3 +13,6 @@ Data links:
 
 * data/fxspot/GBPUSD.csv:<br>
   https://uk.investing.com/currencies/gbp-usd-historical-data
+
+* data/RDSB/RDSB.L.csv
+  https://uk.finance.yahoo.com/quote/SHEL.L/history?p=SHEL.L
