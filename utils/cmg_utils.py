@@ -94,7 +94,7 @@ def get_cmg(corr_plot=False) -> pd.DataFrame:
     return df
 
 
-def get_oil_demand() -> pd.DataFrame:
+def get_oil_supply_demand() -> pd.DataFrame:
     dateparse = lambda x: datetime.strptime(x, '%b %Y')
     df = pd.read_csv(path.joinpath('eia/supply_demand/production_consumption_and_inventories.csv'),
                      sep=';',

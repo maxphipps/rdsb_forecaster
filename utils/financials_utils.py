@@ -1,3 +1,4 @@
+import datetime
 import pathlib
 
 import pandas as pd
@@ -15,7 +16,15 @@ def get_financials_frame():
                 FinancialsExtractor.shares(),
                 FinancialsExtractor.margins(),
                 FinancialsExtractor.volumes())
-    return pd.concat(fin_list, join='outer', axis=1)
+    df_financials = pd.concat(fin_list, join='outer', axis=1)
+
+    # Unaudited accounts are published 30 days after financial date
+    # Shift the financial data forwards to avoid look forward
+    # E.g. Q3 = 1/7 to 30/9, but market cannot see until 31/10
+    df_financials.index = df_financials.index + datetime.timedelta(days=30)
+    # Backfill to populate all days in the quarter
+    df_financials = df_financials.resample('D').bfill()
+    return df_financials
 
 
 class FinancialsExtractor:

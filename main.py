@@ -1,5 +1,3 @@
-import datetime
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -69,41 +67,31 @@ class RDSBModel:
         """
         # Read share price in gbp
         df_usdgbp = fxspot_utils.read_usdgbp()
-        df_sp = fxspot_utils.read_rdsb()
-        # Join with usdgbp rate
-        df_sp = df_sp.join(df_usdgbp,how='left',on='Date')
+        df_rdsb_price = fxspot_utils.read_rdsb()
         # Convert to usd
-        df_sp['Close US cents'] = df_sp['Close'].multiply(df_sp['GBPUSD'], axis=0)
+        df_rdsb_price = df_rdsb_price.join(df_usdgbp,how='left',on='Date')
+        df_rdsb_price['Close US cents'] = df_rdsb_price['Close'].multiply(df_rdsb_price['GBPUSD'], axis=0)
 
-        df_fin = get_financials_frame()
-
-        # Unaudited accounts are published 30 days after financial date
-        # Shift the financial data forwards to avoid look forward
-        # E.g. Q3 = 1/7 to 30/9, but market cannot see until 31/10
-        df_fin.index = df_fin.index + datetime.timedelta(days=30)
-        # Backfill to populate all days in the quarter
-        df_fin = df_fin.resample('D').bfill()
-
-        # Construct cmg price dataframe
-        self.df_cmg = cmg_utils.get_cmg()
-
-        # Oil supply and demand
-        self.df_oil_demand = cmg_utils.get_oil_demand()
+        df_financials = get_financials_frame()
 
         # Construct main dataframe
-        self.df_main = pd.concat([df_fin, self.df_cmg, self.df_oil_demand, df_sp], join='outer', axis=1)
-
+        df_commodities_prices = cmg_utils.get_cmg()
+        df_oil_supply_demand = cmg_utils.get_oil_supply_demand()
+        self.df_main = pd.concat([df_financials,
+                                  df_commodities_prices,
+                                  df_oil_supply_demand,
+                                  df_rdsb_price], join='outer', axis=1)
 
         # Forecast the production volumes
         for volume_col in ['Total natural gas production', 'Total liquids production']:
             # Construct features
-            df_liq = pd.concat([self.df_main[volume_col], self.df_oil_demand], join='outer', axis=1)
+            df_liq = pd.concat([self.df_main[volume_col], df_oil_supply_demand], join='outer', axis=1)
             df_pred_volume = self.forecast_production_volume(df_liq, target_col=volume_col)
             # Override exact onto forecast values
             df_pred_volume = df_pred_volume.rename(columns={f'{volume_col} forecast':
                                                             volume_col})
             self.df_main[volume_col] = self.df_main[[volume_col]].combine_first(df_pred_volume)
-    
+
             # # Visual data verification: successful join
             # ax = plt.gca()
             # self.df_main[volume_col].plot(ax=ax,alpha=0.5,color='r')
@@ -180,21 +168,14 @@ class RDSBModel:
                     # 'Natural Gas Price Residential Sector',
                     ]:
             self.df_main[col+' x vol'] = self.df_main[col] * self.df_main['Total natural gas production']
-        
+
         # print(self.df_main[['naturalgas x vol', 'brent x vol', 'wticrude x vol']])
         # assert False
-
-        # V2: Capital employed = 'Property, plant and equipment'
-        # multiply commodity prices by capital employed
-        for comcol in self.df_cmg.columns:
-            self.df_main[comcol+' x CapEmployed'] = \
-                    self.df_main[comcol].multiply(self.df_main['Property, plant and equipment'],axis=0)
 
         # Calculate rolling means
         for col in ['Natural Gas Price Commercial Sector x vol',
                     'Gasoline All Grades Retail Price x vol',
                     'brent x vol', 'wticrude x vol', 'naturalgas x vol',
-                    'brent x CapEmployed', 'wticrude x CapEmployed', 'naturalgas x CapEmployed',
                     'Gasoline All Grades Retail Price x vol', 'Natural Gas Price Industrial Sector x vol',
                     'Depreciation, depletion and amortisation_neg', 'Purchases_neg', 'Revenue',
                     'Revenue-Depreciation',
@@ -213,45 +194,20 @@ class RDSBModel:
             self.df_main[col+'26D'] = self.df_main[col].rolling(1 * 26).mean()
             self.df_main[col+'12D'] = self.df_main[col].rolling(1 * 12).mean()
 
-        # Calculate 1st order changes in CMG prices, i.e. using change in price as predictor of future CMG prices
-        for _ma in [(60, 5),
-                    (60, 10),
-                    (60, 20),
-                    (60, 30)]:
-            for col in ['Natural Gas Price Commercial Sector x vol',
-                        'Gasoline All Grades Retail Price x vol']:
-                # self.df_main[col+'MACD'] = self.df_main[col+'12D'] - self.df_main[col+'26D']
-                # self.df_main[col+'Delta'] = self.df_main[col+'26D'].pct_change(periods=26).ffill() * 100.
-                # _ma[0] = averaging period
-                # _ma[1] = look back period for differencing
-                self.df_main[col+f'Delta{_ma[0]}_{_ma[1]}'] = self.df_main[col].rolling(_ma[0], center=True).mean()\
-                                                      .pct_change(periods=_ma[1]).ffill() * 100.
-
-        # self.df_main = self.df_main.dropna(axis=0)
-
     def train_test_split(self):
 
         # Visualise the features
         self.df_main[self.feature_cols].plot(style='x-', markersize=2)
         plt.show()
-        
+
         # Data to regress
         self.df_regdata = self.df_main[self.feature_cols+[self.regress_col]]
 
-        # TODO CHEAT: temporarily commented
-        # Avoid look-forward: shift the below columns forward
-        #    'Property, plant and equipment', 'Realised oil price global', 'Realised gas price global'
+        # Avoid look-forward: shift the columns forward
         # since these value won't be available until the latest report is released
-        # for col in ['Property, plant and equipment', 'Realised oil price global', 'Realised gas price global']:
-        # for col in feature_cols:
-        #     if col in self.df_regdata.columns:
-        #         self.df_regdata[col] = self.df_regdata[col].shift(1)
-
-        # temporary. remove:
-        # self.df_regdata['brent'] = self.df_regdata['brent'].shift(1)
-        # self.df_regdata['naturalgas'] = self.df_regdata['naturalgas'].shift(1)
-        # self.df_regdata['Brent rolling3M'] = self.df_regdata['Brent rolling3M'].shift(1)
-        # self.df_regdata['Natural Gas rolling3M'] = self.df_regdata['Natural Gas rolling3M'].shift(1)
+        for col in feature_cols:
+            if col in self.df_regdata.columns:
+                self.df_regdata[col] = self.df_regdata[col].shift(1)
 
         # Drop rows with NaNs
         self.df_regdata = self.df_regdata.dropna()
@@ -262,8 +218,6 @@ class RDSBModel:
         # self.df_regdata = self.df_regdata[self.df_regdata.index < '2021-10-01']
 
         self.X_all_dates = self.df_regdata.index.values
-        # self.X_all = df['all'][['Brent rolling12M','Natural Gas rolling12M','Shares outstanding at the end of the period']].values
-        # self.X_all = df['all'][['brent','naturalgas','Shares outstanding at the end of the period']].values
         self.X_all = self.df_regdata[feature_cols].values
 
         # target variable revenue
@@ -273,13 +227,10 @@ class RDSBModel:
         # n_test = 15#10 # 12 # 1800
         n_test = int(np.ceil(self.years_test * 365))
 
-        # https://scikit-learn.org/stable/auto_examples/linear_model/plot_ols.html#sphx-glr-auto-examples-linear-model-plot-ols-py
-
         # Split the data into training/testing sets
         self.X_train = self.X_all[:-n_test]
         self.X_dates_train = self.X_all_dates[:-n_test]
         self.X_test = self.X_all[-n_test:]
-        # X_dates_test = self.X_all_dates[-n_test:]
 
         # Split the targets into training/testing sets
         self.Y_train = self.y_all[:-n_test]
@@ -399,152 +350,15 @@ class RDSBModel:
 
 
 if __name__ == '__main__':
-
     feature_cols = [
-        # 'U.S. Commercial Inventory Crude Oil and Other Liquids',
-        # 'T3_STCHANGE_WORLD',
-        # 'PASC_US',
-        # 'PAPR_WORLD',
-        # 'PATC_WORLD',
-        # 'PAPR_WORLD3M',
-        # 'world consumption3M',
-        # 'world consumption-production',
-        # 'world consumption/production',
-        # 'world consumption-production3M',
-        # 'world consumption-production6M',
-        # 'world consumption-production12M',
-        # 'world consumption-production24M',
-        # 'Property, plant and equipment',
-        # 'brent',
-        # 'brent x CapEmployed',
-        # 'brent x CapEmployed3M',
-        # 'brent x CapEmployed6M',
-        # 'brent x CapEmployed12M',
-        # 'brent x CapEmployed24M',
-        # 'Brent rolling3M',
-        # 'Brent rolling6M',
-        # 'Brent rolling12M',
-        # 'wticrude',
-        # 'wticrude x CapEmployed',
-        # 'wticrude x CapEmployed3M',
-        # 'wticrude x CapEmployed6M',
-        # 'wticrude x CapEmployed12M',
-        # 'wticrude x CapEmployed24M',
-        # 'wticrude rolling3M',
-        # 'wticrude rolling6M',
-        # 'wticrude rolling12M',
-        # 'naturalgas',
-        # 'naturalgas x CapEmployed',
-        # 'naturalgas x CapEmployed3M',
-        # 'naturalgas x CapEmployed6M',
-        # 'naturalgas x CapEmployed12M',
-        # 'naturalgas x CapEmployed24M',
-        # 'Natural Gas rolling3M',
-        # 'Natural Gas rolling6M',
-        # 'Natural Gas rolling12M',
-
-        # 'wticrude',
-        # 'brent',
-        # 'Gasoline',
-        # 'Fuel Oil',
-        # 'Gasoline All Grades Retail Price',
-
-        # 'Gasoline x vol',
-        # 'Fuel Oil x vol',
         'Gasoline All Grades Retail Price x vol',
-        # 'Gasoline All Grades Retail Price x volDelta30',
-        # 'Gasoline All Grades Retail Price x volDelta60_5',
-        # 'Gasoline All Grades Retail Price x volDelta120',
-        # 'Gasoline All Grades Retail Price x volDelta60_10',
-        # 'Gasoline All Grades Retail Price x volDelta60_20',
-        # 'Gasoline All Grades Retail Price x volDelta60_30',
-        # 'Gasoline All Grades Retail Price x vol3M',
-
-        # 'Realised oil price global',
-        # 'Realised gas price global',
-        # 'Realised oil price global x vol',
-        # 'Realised gas price global x vol',
-        # 'Natural Gas Price Industrial Sector',
-        # 'Natural Gas Price Industrial Sector x vol3M',
-        # 'Natural Gas Price Commercial Sector',
         'Natural Gas Price Commercial Sector x vol',
-        # 'Natural Gas Price Commercial Sector x volDelta30',
-        # 'Natural Gas Price Commercial Sector x volDelta60_5',
-        # 'Natural Gas Price Commercial Sector x volDelta120',
-        # 'Natural Gas Price Commercial Sector x volDelta60_10',
-        # 'Natural Gas Price Commercial Sector x volDelta60_20',
-        # 'Natural Gas Price Commercial Sector x volDelta60_30',
         # 'naturalgas x vol',
         # 'brent x vol',
         'wticrude x vol',
-        # 'naturalgas x vol3M',
-        # 'brent x vol3M',
-        # 'wticrude x vol3M',
-        # 'naturalgas x vol6M',
-        # 'brent x vol6M',
-        # 'wticrude x vol6M',
-        # 'naturalgas x vol12M',
-        # 'brent x vol12M',
-        # 'wticrude x vol12M',
-        # 'naturalgas x vol24M',
-        # 'brent x vol24M',
-        # 'wticrude x vol24M',
-        ### Income sheet
-        ### Revenue
-        # 'Revenue',
-        # 'Revenue3M',
-        # 'Revenue6M',
-        # 'Revenue12M',
-        # 'Revenue24M',
-        ### Significant investments
-        # 'Purchases_neg',
-        # 'Purchases_neg3M',
-        # 'Purchases_neg6M',
-        # 'Purchases_neg12M',
-        # 'Purchases_neg24M',
-        # 'Depreciation, depletion and amortisation_neg',
-        # 'Depreciation, depletion and amortisation_neg3M',
-        # 'Depreciation, depletion and amortisation_neg6M',
-        # 'Depreciation, depletion and amortisation_neg12M',
-        # 'Depreciation, depletion and amortisation_neg24M',
-        ### Critical expenditure that is sunk cost i.e. not an investment
-        # 'Revenue-Depreciation',
-        # 'Revenue-Depreciation3M',
-        # 'Revenue-Depreciation6M',
-        # 'Revenue-Depreciation12M',
-        # 'Revenue-Depreciation24M',
-        # 'Income from continuing operations', # high correlation with 'Income attributable to Royal Dutch Shell plc shareholders'
-        # 'Income from continuing operations3M',
-        # 'Income from continuing operations6M',
-        # 'Income from continuing operations12M',
         'Income attributable to Royal Dutch Shell plc shareholders',
-        # 'Income attributable to Royal Dutch Shell plc shareholders12M',
-        # 'Income attributable to Royal Dutch Shell plc shareholders24M',
-        ### Balance sheet
-        # 'Debt',
-        # 'Debt3M',
         'Total assets', 'Total liabilities_neg',
-        # 'Total assets3M', 'Total liabilities_neg3M',
-        # 'Total assets6M', 'Total liabilities_neg6M',
-        # 'Total assets12M', 'Total liabilities_neg12M',
-        # 'Total assets24M', 'Total liabilities_neg24M',
-        ### Assets-liabilities
-        # 'NAV',
-        # 'NAV3M',
-        # 'NAV6M',
-        # 'NAV12M',
-        # 'NAV24M',
     ]
-
-    # feature_cols = ['PAPR_WORLD',
-    #                 'Total assets3M',
-    #                 'naturalgas x vol',
-    #                 'Total liabilities_neg3M',
-    #                 'brent x vol',
-    #                 'wticrude x vol',
-    #                 'Depreciation, depletion and amortisation_neg6M',
-    #                 'world consumption-production',
-    #                 ]
 
     regress_col = 'Close US cents'
     # regress_col = 'Close US cents1M'
@@ -557,73 +371,16 @@ if __name__ == '__main__':
     # regress_col = 'Total revenue and other income'
 
     # Create linear regression object
-    # mdl = TweedieRegressor(power=0)
-    mdl = Ridge(positive=False)
-    # mdl = ElasticNet(l1_ratio=0.05, positive=True)
-    # mdl = BayesianRidge()
+    # regr_mdl = TweedieRegressor(power=0)
+    regr_mdl = Ridge(positive=False)
+    # regr_mdl = ElasticNet(l1_ratio=0.05, positive=True)
+    # regr_mdl = BayesianRidge()
 
     param = {'regress_col': regress_col, 'feature_cols': feature_cols,
-             'years_test': 10, 'mdl': mdl}
-    mdl = RDSBModel(**param)
-
-    mdl.read_data()
-
-    # # # Display comparison of pricing measures
-    # # plt.figure(figsize=(20, 6))
-    # # plt.subplot(121)
-    # # ax = plt.gca()
-    # # mdl.df_main['Revenue per share $'].plot(ax=ax)
-    # # plt.axis('tight')
-    # # plt.subplot(122)
-    # # ax = plt.gca()
-    # # mdl.df_main['Market cap'].plot(ax=ax)
-    # # plt.axis('tight')
-    # # plt.show()
-    # for col in ['Close US cents', 'Revenue per share $']:
-    #     (mdl.df_main[col]/mdl.df_main[col].dropna().iloc[-1]).plot()
-    # plt.show()
-    # assert False
-
-    mdl.extract_features()
-
-    # plt.figure(figsize=(15,4))
-    # sns.lineplot(data=df['wticrude'].set_index('Date')['wticrude'], color='k');
-    # sns.lineplot(data=df['wticrude'].set_index('Date')['wticrude rolling12M'], color='k');
-    # plt.show()
-    # plt.figure(figsize=(15,4))
-    # sns.lineplot(data=df['naturalgas'].set_index('Date')['naturalgas'], color='darkblue');
-    # sns.lineplot(data=df['naturalgas'].set_index('Date')['Natural Gas rolling12M'], color='darkblue');
-    # plt.show()
-
-    # # Plot income
-    # cols = ['Revenue',\
-    #         'Share of profit of joint ventures and associates',\
-    #         'Interest and other income1']
-    # plt.figure(figsize=(12,3*3))
-    #
-    # ax = [None for _ in range(3)]
-    # for ii,col in enumerate(cols):
-    #     ax[ii]=plt.subplot(3, 1, ii+1)
-    #     sns.lineplot(data=df['income_sheet_quar'][col], label=col, ax=ax[ii])
-    #     # Set y limit
-    #     ax[ii].set_ylim(min(0.,ax[ii].get_ylim()[0]),ax[ii].get_ylim()[1]*1.1);
-    #     ax[ii].set_title(col)
-    #
-    # plt.tight_layout()
-    # plt.show()
-    #
-    # cols = ['Revenue',\
-    #         'Share of profit of joint ventures and associates']
-    # plt.figure(figsize=(15,4))
-    # ax = sns.lineplot(data=df['income_sheet_quar'][cols[0]], label=cols[0], color='y')
-    # ax2 = plt.twinx()
-    # sns.lineplot(data=df['income_sheet_quar'][cols[1]], label=cols[1], ax=ax2)
-    # # remove right hand grid lines
-    # ax2.grid(None)
-    # # High correlation between "revenue" and "profit of joint ventures and associates"
-    # print(df['income_sheet_quar'][cols].corr(method='pearson'))
-    # plt.show()
-
-    mdl.train_test_split()
-    mdl.train()
-    mdl.predict()
+             'years_test': 10, 'mdl': regr_mdl}
+    rdsb_mdl = RDSBModel(**param)
+    rdsb_mdl.read_data()
+    rdsb_mdl.extract_features()
+    rdsb_mdl.train_test_split()
+    rdsb_mdl.train()
+    rdsb_mdl.predict()
