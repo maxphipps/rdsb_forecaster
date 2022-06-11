@@ -1,15 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
-from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_squared_error, r2_score
 
-from utils import fxspot_utils, cmg_utils
-from utils.financials_utils import get_financials_frame
-from utils.ml_utils import feature_selection_and_fit_model
-
-sns.set()
+from rdsb_forecaster.utils import fxspot_utils, cmg_utils
+from rdsb_forecaster.utils.financials_utils import get_financials_frame
+from rdsb_forecaster.utils.ml_utils import feature_selection_and_fit_model
 
 
 class RDSBModel:
@@ -195,7 +191,6 @@ class RDSBModel:
             self.df_main[col+'12D'] = self.df_main[col].rolling(1 * 12).mean()
 
     def train_test_split(self):
-
         # Visualise the features
         self.df_main[self.feature_cols].plot(style='x-', markersize=2)
         plt.show()
@@ -205,7 +200,7 @@ class RDSBModel:
 
         # Avoid look-forward: shift the columns forward
         # since these value won't be available until the latest report is released
-        for col in feature_cols:
+        for col in self.feature_cols:
             if col in self.df_regdata.columns:
                 self.df_regdata[col] = self.df_regdata[col].shift(1)
 
@@ -218,10 +213,10 @@ class RDSBModel:
         # self.df_regdata = self.df_regdata[self.df_regdata.index < '2021-10-01']
 
         self.X_all_dates = self.df_regdata.index.values
-        self.X_all = self.df_regdata[feature_cols].values
+        self.X_all = self.df_regdata[self.feature_cols].values
 
         # target variable revenue
-        self.y_all = self.df_regdata[regress_col].values
+        self.y_all = self.df_regdata[self.regress_col].values
 
         # n_test = 14 # 1800
         # n_test = 15#10 # 12 # 1800
@@ -344,43 +339,7 @@ class RDSBModel:
         plt.plot(self.X_all_dates, y_all_pred, color='blue', linewidth=1.5, label='pred');
         plt.plot(self.X_all_dates, y_err, color='black', linewidth=1, label='error');
         plt.axvline(self.X_dates_train[-1])
-        plt.legend();
-        plt.ylim([0, plt.ylim()[1]*1.1]);
+        plt.ylabel(self.regress_col)
+        plt.legend()
+        plt.ylim([0, plt.ylim()[1]*1.1])
         plt.show()
-
-
-if __name__ == '__main__':
-    feature_cols = [
-        'Gasoline All Grades Retail Price x vol',
-        'Natural Gas Price Commercial Sector x vol',
-        # 'naturalgas x vol',
-        # 'brent x vol',
-        'wticrude x vol',
-        'Income attributable to Royal Dutch Shell plc shareholders',
-        'Total assets', 'Total liabilities_neg',
-    ]
-
-    regress_col = 'Close US cents'
-    # regress_col = 'Close US cents1M'
-    # regress_col = 'Close US cents3M'
-    # regress_col = 'Market cap'
-    # regress_col = 'Market cap1M'
-    # regress_col = 'Market cap3M'
-    # regress_col = 'Revenue per share $'
-    # regress_col = 'Revenue'
-    # regress_col = 'Total revenue and other income'
-
-    # Create linear regression object
-    # regr_mdl = TweedieRegressor(power=0)
-    regr_mdl = Ridge(positive=False)
-    # regr_mdl = ElasticNet(l1_ratio=0.05, positive=True)
-    # regr_mdl = BayesianRidge()
-
-    param = {'regress_col': regress_col, 'feature_cols': feature_cols,
-             'years_test': 10, 'mdl': regr_mdl}
-    rdsb_mdl = RDSBModel(**param)
-    rdsb_mdl.read_data()
-    rdsb_mdl.extract_features()
-    rdsb_mdl.train_test_split()
-    rdsb_mdl.train()
-    rdsb_mdl.predict()

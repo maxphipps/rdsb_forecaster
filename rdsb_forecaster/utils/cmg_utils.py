@@ -7,7 +7,7 @@ import seaborn as sns
 
 sns.set()
 
-path = pathlib.PurePath('data/cmg')
+path = pathlib.PurePath('rdsb_forecaster/data/cmg')
 
 
 def get_cmg(corr_plot=False) -> pd.DataFrame:

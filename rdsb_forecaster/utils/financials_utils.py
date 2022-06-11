@@ -7,7 +7,7 @@ import pandas as pd
 Utility functions to convert xls financials to pandas dataframes
 '''
 
-path = pathlib.PurePath('data/rdsb')
+path = pathlib.PurePath('rdsb_forecaster/data/rdsb')
 
 
 def get_financials_frame():
