@@ -1,20 +1,18 @@
-import numpy as np
-from sklearn.linear_model import Ridge, Lasso, ElasticNet, LinearRegression, TweedieRegressor
-from sklearn.metrics import mean_squared_error, r2_score
-
 import copy
 import datetime
 
-import matplotlib.pylab as pl
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-
+import numpy as np
 import seaborn as sns
+from sklearn.linear_model import Ridge, LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
+
 sns.set()
 
 import pandas as pd
 
-from utils import fxspot_utils, financials_utils, cmg_utils
+from utils import fxspot_utils, cmg_utils
+from utils.financials_utils import get_financials_frame
 
 ''''''
 
@@ -182,13 +180,7 @@ class RDSBModel:
         # Convert to usd
         df_sp['Close US cents'] = df_sp['Close'].multiply(df_sp['GBPUSD'], axis=0)
 
-        # Construct financials dataframe
-        fin_list = (financials_utils.income_sheet(),
-                    financials_utils.balance_sheet(),
-                    financials_utils.shares(),
-                    financials_utils.margins(),
-                    financials_utils.volumes())
-        df_fin = pd.concat(fin_list, join='outer', axis=1)
+        df_fin = get_financials_frame()
 
         # Unaudited accounts are published 30 days after financial date
         # Shift the financial data forwards to avoid look forward

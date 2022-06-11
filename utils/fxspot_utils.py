@@ -19,7 +19,7 @@ def read_usdgbp():
 
 def read_rdsb():
     fn = 'data/rdsb/RDSB.L.csv'
-    df_sp = pd.read_csv(fn, parse_dates=['Date'])
+    df_sp = pd.read_csv(fn, parse_dates=['Date'], sep=';')
     df_sp = df_sp.set_index('Date')
     # interpolate to fill missing values
     # df['sp']['GBPUSD'] = df['sp']['GBPUSD'].interpolate(method='polynomial', order=2)
