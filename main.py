@@ -1,24 +1,20 @@
-import copy
 import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
-from sklearn.linear_model import Ridge, LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
-
-sns.set()
-
 import pandas as pd
+import seaborn as sns
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_squared_error, r2_score
 
 from utils import fxspot_utils, cmg_utils
 from utils.financials_utils import get_financials_frame
+from utils.ml_utils import feature_selection_and_fit_model
 
-''''''
+sns.set()
 
 
 class RDSBModel:
-
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
@@ -44,112 +40,11 @@ class RDSBModel:
             df_feat_target[col] *= liq_idx0 / df_feat_target[col].dropna().iloc[0]
         df_feat_target = df_feat_target.sort_index()
 
-        # Setup test train split
-        _split = 0.33
-        # Perform test train split
-        df_test_train = df_feat_target.dropna()
-        n_test = int(np.ceil(len(df_test_train) * _split))
-        dates_all = df_test_train.index
-        dates_train = dates_all[:-n_test]
-        dates_test = dates_all[-n_test:]
-        X_train_all_feat = df_test_train.drop(columns=[target_col]).iloc[:-n_test]
-        Y_train = df_test_train[target_col].iloc[:-n_test]
-        X_test_all_feat = df_test_train.drop(columns=[target_col]).iloc[-n_test:]
-        Y_test = df_test_train[target_col][-n_test:]
-
-        def feature_importance(X_data, regr):
-            """
-            Simple feature importance metric.
-            Prints the coefficients scaled by median value of the X_data passed in.
-            :param X_data: features
-            :param regr: model
-            :return:
-            """
-            unsorted_list = []
-            for col, coeff in zip(X_data.columns, regr.coef_):
-                coeff_norm_abs = abs(coeff / X_data[col].median())
-                unsorted_list.append([col, coeff_norm_abs, coeff])
-            unsorted_list.sort(key=lambda x: x[1])
-            print(f'{"Feature name":60s} Coefficient  Negative Coeff')
-            for tup in unsorted_list:
-                if tup[1] != 0.0:
-                    print(f'{tup[0]:60s} {tup[1]:.5e}  {tup[2] < 0.0}')
-
-        def feature_selection_and_fit_model():
-            """
-            Feature selection:
-            Returns the top n features most correlated with the target variable
-            that minimises the test MSE.
-            TODO: Approach is quite rough and not particularly conventional - not ideal
-            :return:
-            """
-
-            # calculate the correlation matrix
-            corr = abs(df_test_train.corr())
-            corr = corr.sort_values(by=target_col, ascending=False)[[target_col]]
-
-            # print(corr)
-            # # plot the heatmap
-            # sns.heatmap(corr, xticklabels=corr.columns, yticklabels=corr.index)
-            # plt.tight_layout()
-            # plt.show()
-
-            def get_trial_features(nfeat):
-                """
-                Top n most correlated features
-                :return:
-                """
-                feature_cols = list(corr.index[1:nfeat + 1].values)
-                assert target_col not in feature_cols
-                return feature_cols
-
-            # Feature extraction: top n correlated features
-            df_results = pd.DataFrame(columns=['nfeatures', 'error', 'mdl'])
-            for i, liq_feat_top_n in enumerate(range(1, 25)):
-                # Isolate features
-                feature_cols = get_trial_features(liq_feat_top_n)
-                X_train = X_train_all_feat[feature_cols]
-                X_test = X_test_all_feat[feature_cols]
-
-                # Train the model
-                regr = LinearRegression()
-                regr.fit(X_train, Y_train)
-                # Make predictions
-                Y_test_pred = regr.predict(X_test)
-
-                # # For debugging and analytics
-                # feature_importance(X_test, regr)
-
-                # Calculate error
-                _err = mean_squared_error(Y_test, Y_test_pred)
-                df_results = df_results.append({'features': feature_cols,
-                                                'nfeatures': liq_feat_top_n,
-                                                'error': _err,
-                                                'mdl': copy.deepcopy(regr)}, ignore_index=True)
-            #     # Plot
-            #     plt.plot(dates_test, Y_test_pred, label=f'pred(n={liq_feat_top_n}); MSE={_err:.1f}', alpha=0.5)
-            # plt.plot(df_test_train[target_col], label='train')
-            # plt.legend()
-            # plt.show()
-
-            df_results = df_results.set_index('nfeatures')
-            # # Plot error curve
-            # df_results['error'].plot()
-            # plt.show()
-            # Optimise number of features
-            opt_n_features = int(df_results.index[df_results['error'].argmin()])
-            # loc rather than iloc, since we want the index with value=opt_n_features
-            return df_results.loc[opt_n_features]
-
         # Feature selection and fit model
-        df_results = feature_selection_and_fit_model()
+        df_results = feature_selection_and_fit_model(target_col, df_feat_target)
         # unpack
         feature_cols = df_results['features']
         regr = df_results['mdl']
-
-        # Print feature importance for fitted model
-        X_test = X_test_all_feat[feature_cols]
-        feature_importance(X_test, regr)
 
         # Make predictions across all dates
         X_test = df_feat_target[feature_cols].dropna()
