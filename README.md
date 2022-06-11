@@ -4,7 +4,7 @@
 This project contains a simple ridge regression model to predict the Shell share price based on its fundamentals.
 The default config fits using a test set of the prior 10 years' data.
 
-Specifically, the target variable is the daily Shell spot close price in USD. 
+Specifically, the target variable is the daily Shell spot close price in US cents. 
 No adjustment for dividends is applied.
 
 The model considers a number of features
@@ -17,6 +17,18 @@ The model considers a number of features
   * Natural gas commercial(*)
   * WTI crude(*)
   * US Gasoline all retail(*)
+  
+### Usage
+The model can be ran by running the below at the command line:
+```
+python rdsb_forecaster.py
+```
+
+Following this command, the below outputs should then be displayed
+showing the ridge regression coeffients and error alpha dependency:
+![Ridge coefficients](docs/ridge_coeffs.png)
+The Shell close price prediction (US cents) should then be output:
+![Close price predictions](docs/close_preds.png)
 
 ### Data links:
 * data/eia/prices/energy_prices.csv: [[click here]](https://www.eia.gov/outlooks/steo/data/browser/#/?v=8&f=M&s=0&start=199701&end=202212&ctype=linechart&maptype=0&linechart=WTIPUUS)
