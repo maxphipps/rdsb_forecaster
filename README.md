@@ -11,7 +11,7 @@ making any investment decision.
 </b>
 
 ### Overview
-This project contains a simple ridge regression model to predict the Shell (ticker: SHEL) share price based on its fundamentals.
+This project contains a simple ridge regression model to estimate the current fair market share price of Shell (ticker: SHEL) based on its fundamentals.
 The default config fits performs a fit to 10 years' historical data commencing 2001-02-01.
 
 Specifically, the target variable is the daily Shell spot close price in US cents. 
@@ -28,16 +28,23 @@ The model considers a number of features
   * WTI crude(*)
   * US Gasoline all retail(*)
   
+### Installation
+The code requires the packages detailed in requirements.txt to be installed, e.g. by calling in a virtual environment console,
+```
+$ pip install -r requirements.txt
+```
+
 ### Usage
 The model can be ran by running the below at the command line:
 ```
-python rdsb_forecaster.py
+$ python rdsb_forecaster.py
 ```
 
-Following this command, the below outputs should then be displayed
-showing the ridge regression coeffients and error alpha dependency:
+The below outputs will then be generated
+showing performance of the model fit
+(ridge regression coeffients and error alpha dependency):
 ![Ridge coefficients](docs/ridge_coeffs.png)
-The Shell close price prediction (US cents) should then be output:
+The fair market share price prediction of Shell in US cents will then be output:
 ![Close price predictions](docs/close_preds.png)
 
 ### Data links:
